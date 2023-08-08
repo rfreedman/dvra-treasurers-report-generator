@@ -1,17 +1,16 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
-import androidx.compose.material.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.AwtWindow
 import androidx.compose.ui.window.Window
@@ -32,6 +31,8 @@ fun app() {
     var endingBalance by remember {mutableStateOf("")}
     var csvFileName by remember {mutableStateOf("")}
     var csvFile by remember { mutableStateOf<File?>(null) }
+
+    var btf by remember { mutableStateOf("") }
 
     var isCsvFileOpenChooserOpen by remember { mutableStateOf(false) }
     var isPdfFileSaveChooserOpen by remember { mutableStateOf(false) }
@@ -85,46 +86,39 @@ fun app() {
     }
 
     MaterialTheme {
-        Column(Modifier.fillMaxSize(), Arrangement.spacedBy(5.dp)) {
-            TextField(
+        Column(Modifier.fillMaxSize().padding(0.dp, 40.dp), Arrangement.spacedBy(5.dp)) {
+
+            inputTextField(
+                modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
+                label = "Starting Balance",
                 value = startingBalance,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                onValueChange = { value ->
-                    if(isCurrency(value)) {
-                        startingBalance = value
-                    }
-                },
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-                    .then(Modifier.padding(top = 20.dp)),
-                label = { Text(text = "Starting Balance: ") },
-                // placeholder = { Text(text = "Starting Balance") }
+                onValueChange = { if(isCurrency(it))  {
+                    startingBalance = it
+                } }
             )
 
-            TextField(
+            inputTextField(
+                modifier = Modifier.align(alignment = Alignment.CenterHorizontally).padding(0.dp, 20.dp, 0.dp, 20.dp),
+                label = "Ending Balance  ",
                 value = endingBalance,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                onValueChange = { value ->
-                    if(isCurrency(value))  {
-                        endingBalance = value
-                    }
-                },
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-                label = { Text(text = "Ending Balance: ") },
-                // placeholder = { Text(text = "Ending Balance") }
+                onValueChange = { if(isCurrency(it))  {
+                    endingBalance = it
+                } }
             )
-
 
             Button(
-                modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
+                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
+                modifier = Modifier.align(alignment = Alignment.CenterHorizontally).padding(0.dp, 20.dp, 0.dp, 20.dp),
                 onClick = {
                     isCsvFileOpenChooserOpen = true
                 }) {
                 Text("Choose csv File")
             }
 
-            Text(text ="" +csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Text(text = csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally))
 
             Button(
+                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
                 modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
                     .then(Modifier.padding(vertical = 10.dp)),
                 enabled = haveAllInput(),
@@ -137,14 +131,42 @@ fun app() {
     }
 }
 
-fun main() = application {
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "DVRA Treasurer's Report Generator",
-        // state = rememberWindowState(width = 300.dp, height = 300.dp)
-    ) {
-        app()
-    }
+/**
+ * A Basic (non-Material) input field with a label
+ */
+@Suppress("SameParameterValue")
+@Composable
+private fun inputTextField(
+    modifier: Modifier,
+    fieldHeight: Dp = 20.dp,
+    fieldWidth: Dp = 275.dp,
+    label: String,
+    value: String,
+    onValueChange: (value: String) -> Unit) {
+
+    BasicTextField(
+        modifier = modifier.then(Modifier.background(androidx.compose.ui.graphics.Color.White)),
+        singleLine = true,
+        value = value,
+        onValueChange = onValueChange,
+        decorationBox = { innerTextField ->
+            // Because the decorationBox is used, the whole Row gets the same behaviour as the
+            // internal input field would have otherwise. For example, there is no need to add a
+            // Modifier.clickable to the Row anymore to bring the text field into focus when user
+            // taps on a larger text field area which includes paddings and the icon areas.
+            Row(
+                Modifier.width(fieldWidth)
+            ) {
+                // Icon(Icons.Default.MailOutline, contentDescription = null)
+                Text(
+                    text = "$label:",
+                    modifier = Modifier.height(fieldHeight).background(Color(0x55CCCCCC)) // ARGB
+                )
+                Spacer(Modifier.width(12.dp).height(fieldHeight).background(Color(0x55CCCCCC)) )
+                innerTextField()
+            }
+        }
+    )
 }
 
 private fun getPdfFileNameFromCsvFilename(csvFileName: String): String {
@@ -200,3 +222,13 @@ private fun pdfFileSaveDialog(
     },
     dispose = FileDialog::dispose
 )
+
+fun main() = application {
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "DVRA Treasurer's Report Generator",
+        // state = rememberWindowState(width = 300.dp, height = 300.dp)
+    ) {
+        app()
+    }
+}
