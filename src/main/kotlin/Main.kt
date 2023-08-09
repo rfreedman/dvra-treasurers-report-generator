@@ -63,16 +63,20 @@ fun app() {
         pdfFileSaveDialog(
             fileName = getPdfFileNameFromCsvFilename(csvFileName),
             onCloseRequest = { directoryName: String, pdfFileName: String? ->
-                isPdfFileSaveChooserOpen = false
-                if (pdfFileName !== null) {
-                    status = "Generating Report"
-                    ReportGenerator.generate(
-                        startingBalance,
-                        endingBalance,
-                        csvFile!!,
-                        File(directoryName, pdfFileName)
-                    )
-                    status = "Report Generated in " + File(directoryName, pdfFileName).path
+                try {
+                    isPdfFileSaveChooserOpen = false
+                    if (pdfFileName !== null) {
+                        status = "Generating Report"
+                        ReportGenerator.generate(
+                            startingBalance,
+                            endingBalance,
+                            csvFile!!,
+                            File(directoryName, pdfFileName)
+                        )
+                        status = "Report Generated in " + File(directoryName, pdfFileName).path
+                    }
+                } catch(t: Throwable) {
+                    status = "Error: " + t.message
                 }
             }
         )
