@@ -27,59 +27,52 @@ fun app() {
     val numericWithDecimalRegex = Regex(pattern = "^[0-9]+\\.$")
     val moneyRegex = Regex(pattern = "^[0-9]+\\.[0-9]?[0-9]?\$")
 
-    var startingBalance by remember {mutableStateOf("")}
-    var endingBalance by remember {mutableStateOf("")}
-    var csvFileName by remember {mutableStateOf("")}
+    var startingBalance by remember { mutableStateOf("") }
+    var endingBalance by remember { mutableStateOf("") }
+    var csvFileName by remember { mutableStateOf("") }
     var csvFile by remember { mutableStateOf<File?>(null) }
-
-    var btf by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("Input Data") }
 
     var isCsvFileOpenChooserOpen by remember { mutableStateOf(false) }
     var isPdfFileSaveChooserOpen by remember { mutableStateOf(false) }
 
-    val isCurrency : (String) -> Boolean = { value: String ->
-         value.isEmpty()
-            || value.matches(numericRegex)
-            || value.matches(moneyRegex)
-            || value.matches(numericWithDecimalRegex)
+    val isCurrency: (String) -> Boolean = { value: String ->
+        value.isEmpty()
+                || value.matches(numericRegex)
+                || value.matches(moneyRegex)
+                || value.matches(numericWithDecimalRegex)
     }
 
-    val haveAllInput : () -> Boolean = {
+    val haveAllInput: () -> Boolean = {
         startingBalance.isNotEmpty() && endingBalance.isNotEmpty() && csvFileName.isNotEmpty()
     }
 
     if (isCsvFileOpenChooserOpen) {
         csvFileOpenDialog(
-            onCloseRequest =  { directory, file ->
+            onCloseRequest = { directoryPath, fileName ->
                 isCsvFileOpenChooserOpen = false
-                if(file !== null) {
-                    csvFileName = file
-                    csvFile = File(directory, file)
-                    // val exists = csvFile !== null && csvFile!!.exists()
-                    // println("csvFile: $csvFileName exists: $exists")
+                if (fileName !== null) {
+                    csvFileName = fileName
+                    csvFile = File(directoryPath, fileName)
                 }
             }
         )
     }
 
-    if(isPdfFileSaveChooserOpen) {
+    if (isPdfFileSaveChooserOpen) {
         pdfFileSaveDialog(
             fileName = getPdfFileNameFromCsvFilename(csvFileName),
-            onCloseRequest =  { directoryName: String, pdfFileName: String? ->
+            onCloseRequest = { directoryName: String, pdfFileName: String? ->
                 isPdfFileSaveChooserOpen = false
-                if(pdfFileName !== null) {
-                    ReportGenerator.generate(startingBalance, endingBalance, csvFile!!, File(directoryName, pdfFileName))
-                    /*
-                    val directory = File(directoryName)
-                    val directoryExists = directory.exists()
-                    println("directory: $directoryName exists: $directoryExists")
-                    if(directoryExists) {
-                        // val pdfFileName = file
-                        val pdfFile = File(directory, fileName)
-                        val fileExists = pdfFile.exists()
-                        println("pdfFile: $fileName exists: $fileExists")
-                    }
-                     */
+                if (pdfFileName !== null) {
+                    status = "Generating Report"
+                    ReportGenerator.generate(
+                        startingBalance,
+                        endingBalance,
+                        csvFile!!,
+                        File(directoryName, pdfFileName)
+                    )
+                    status = "Report Generated in " + File(directoryName, pdfFileName).path
                 }
             }
         )
@@ -87,46 +80,54 @@ fun app() {
 
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(0.dp, 40.dp), Arrangement.spacedBy(5.dp)) {
+                inputTextField(
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
+                    //modifier = Modifier,
+                    label = "Starting Balance",
+                    value = startingBalance,
+                    onValueChange = {
+                        if (isCurrency(it)) {
+                            startingBalance = it
+                        }
+                    }
+                )
 
-            inputTextField(
-                modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
-                label = "Starting Balance",
-                value = startingBalance,
-                onValueChange = { if(isCurrency(it))  {
-                    startingBalance = it
-                } }
-            )
+                inputTextField(
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
+                        .padding(0.dp, 20.dp, 0.dp, 20.dp),
+                    label = "Ending Balance  ",
+                    value = endingBalance,
+                    onValueChange = {
+                        if (isCurrency(it)) {
+                            endingBalance = it
+                        }
+                    }
+                )
 
-            inputTextField(
-                modifier = Modifier.align(alignment = Alignment.CenterHorizontally).padding(0.dp, 20.dp, 0.dp, 20.dp),
-                label = "Ending Balance  ",
-                value = endingBalance,
-                onValueChange = { if(isCurrency(it))  {
-                    endingBalance = it
-                } }
-            )
+                Button(
+                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
+                        .padding(0.dp, 20.dp, 0.dp, 20.dp),
+                    onClick = {
+                        isCsvFileOpenChooserOpen = true
+                    }) {
+                    Text("Choose csv File")
+                }
 
-            Button(
-                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
-                modifier = Modifier.align(alignment = Alignment.CenterHorizontally).padding(0.dp, 20.dp, 0.dp, 20.dp),
-                onClick = {
-                    isCsvFileOpenChooserOpen = true
-                }) {
-                Text("Choose csv File")
-            }
+                Text(text = csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally))
 
-            Text(text = csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Button(
+                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
+                        .then(Modifier.padding(vertical = 10.dp)),
+                    enabled = haveAllInput(),
+                    onClick = {
+                        isPdfFileSaveChooserOpen = true
+                    }) {
+                    Text("Generate Report")
+                }
 
-            Button(
-                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
-                modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
-                    .then(Modifier.padding(vertical = 10.dp)),
-                enabled = haveAllInput(),
-                onClick = {
-                    isPdfFileSaveChooserOpen  = true
-                }) {
-                Text("Generate Report")
-            }
+                Text(text = status, modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = 225.dp))
         }
     }
 }
@@ -142,10 +143,11 @@ private fun inputTextField(
     fieldWidth: Dp = 275.dp,
     label: String,
     value: String,
-    onValueChange: (value: String) -> Unit) {
+    onValueChange: (value: String) -> Unit
+) {
 
     BasicTextField(
-        modifier = modifier.then(Modifier.background(androidx.compose.ui.graphics.Color.White)),
+        modifier = modifier.then(Modifier.background(Color.White)),
         singleLine = true,
         value = value,
         onValueChange = onValueChange,
@@ -162,7 +164,7 @@ private fun inputTextField(
                     text = "$label:",
                     modifier = Modifier.height(fieldHeight).background(Color(0x55CCCCCC)) // ARGB
                 )
-                Spacer(Modifier.width(12.dp).height(fieldHeight).background(Color(0x55CCCCCC)) )
+                Spacer(Modifier.width(12.dp).height(fieldHeight).background(Color(0x55CCCCCC)))
                 innerTextField()
             }
         }
@@ -182,10 +184,11 @@ private fun csvFileOpenDialog(
         object : FileDialog(parent, "Choose a file", LOAD) {
 
             override fun setVisible(value: Boolean) {
-                setFilenameFilter(FilenameFilter { _, name -> name.endsWith(".csv")  })
+                // setFilenameFilter(FilenameFilter { _, name -> name.endsWith(".csv") })
+                setFilenameFilter(fileNameFilterByExtension(".csv"))
                 super.setVisible(value)
                 if (value) {
-                    if(file !== null) {
+                    if (file !== null) {
                         onCloseRequest(this.directory, file)
                     } else {
                         onCloseRequest("", null)
@@ -197,6 +200,9 @@ private fun csvFileOpenDialog(
     dispose = FileDialog::dispose
 )
 
+private fun fileNameFilterByExtension(extension: String) : FilenameFilter = FilenameFilter { _, name -> name.endsWith(extension) }
+
+
 @Composable
 private fun pdfFileSaveDialog(
     parent: Frame? = null,
@@ -207,11 +213,11 @@ private fun pdfFileSaveDialog(
         object : FileDialog(parent, "Choose a file", SAVE) {
 
             override fun setVisible(value: Boolean) {
-                setFilenameFilter(FilenameFilter { _, name -> name.endsWith(".pdf")  })
+                setFilenameFilter(fileNameFilterByExtension(".pdf"))
                 setFile(fileName)
                 super.setVisible(value)
                 if (value) {
-                    if(file !== null) {
+                    if (file !== null) {
                         onCloseRequest(this.directory, file)
                     } else {
                         onCloseRequest("", null)

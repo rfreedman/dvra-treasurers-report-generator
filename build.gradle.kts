@@ -20,6 +20,10 @@ dependencies {
     // (in a separate module for demo project and in testMain).
     // With compose.desktop.common you will also lose @Preview functionality
     implementation(compose.desktop.currentOs)
+    implementation("org.apache.commons:commons-text:1.10.0")
+
+    // implementation("com.opencsv:opencsv:5.5.2") -- opencsv has packaging issues - a dependency beanutils, which has a dependency on commons logging
+    implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.9.2")
 }
 
 compose.desktop {
