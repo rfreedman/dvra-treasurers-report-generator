@@ -1,4 +1,7 @@
 import com.github.doyaaaaaken.kotlincsv.dsl.csvReader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withContext
 import org.apache.commons.text.WordUtils
 import java.io.File
 import java.math.BigDecimal
@@ -31,12 +34,12 @@ object ReportGenerator {
 
     private var processingRow = AtomicInteger(-1)
 
-    // todo: these were command-line options, with default values, convert them to args or do away with them
+    // todo: these were command-line options with default values, convert them to args or do away with them
     private var createPdf = true
     private var createDocx = false
-    private var keepMarkdown = false
+    // private var keepMarkdown = false
 
-    fun generate(startingBal: String, endingBal: String, csvFile: File, pdfFile: File) {
+    suspend fun generate(startingBal: String, endingBal: String, csvFile: File, pdfFile: File, keepMarkdown: Boolean, channel: Channel<String>) {
         println("start: $startingBal")
         println("end: $endingBal")
         println("csv: ${csvFile.path}")
@@ -46,21 +49,31 @@ object ReportGenerator {
         this.endingBalance = BigDecimal(endingBal)
 
 
+        channel.send("Reading CSV File")
+
         // get just the lines from the file that are csv data, ignore everything else
         val dataLines: String = extractCsvData(csvFile)
 
         // read the data lines as CSV
         val csvData : List<List<String>>  = csvReader().readAll(dataLines)
 
+        channel.send("Parsing CSV Rows")
+
         csvData.forEach { row ->
             processRow(row)
         }
 
+        channel.send("Creating Transaction Categories")
         createCategories()
+
+        channel.send("Calculating Totals")
         calculateTotals()
+
+        channel.send("Writing Intermediate Markdown")
         writeMarkdown()
 
         if (createPdf) {
+            channel.send("Converting Markdown to PDF")
             convertMarkdownToPdf(pdfFile.path)
         }
 
@@ -69,8 +82,14 @@ object ReportGenerator {
         }
 
         if (!keepMarkdown) {
-            Files.delete(File("report.md").toPath())
+            channel.send("Deleting Intermediate Markdown")
+            withContext(Dispatchers.IO) {
+                Files.delete(File("report.md").toPath())
+                println("markdown deleted")
+            }
         }
+
+        channel.send("Done!")
     }
 
     private fun processRow(row: List<String>) {
@@ -126,7 +145,6 @@ object ReportGenerator {
     }
 
     private fun createCategories() {
-        println("Categorizing Transactions")
         transactions.stream().filter { transaction -> transaction.amount >= BigDecimal.ZERO }
             .forEach { creditTransaction -> categorizeTransaction(creditCategories, creditTransaction) }
 
@@ -155,7 +173,6 @@ object ReportGenerator {
     }
 
     private fun writeMarkdown() {
-        println("Writing Intermediate Markdown file")
         val buf = StringBuilder()
         writeMarkdownYamlHeader(buf)
 
@@ -270,7 +287,6 @@ object ReportGenerator {
     }
 
     private fun convertMarkdownToPdf(path: String) {
-        println("Converting Markdown to PDF")
         val process = ProcessBuilder()
             .inheritIO()
             .command(
@@ -279,13 +295,11 @@ object ReportGenerator {
                 "xelatex",
                 "-s",
                 "-o",
-                // getOutputFilenameRoot() + ".pdf",
                 path,
                 "report.md"
             )
             .start()
         process.waitFor()
-        println("Done!")
     }
 
     private fun convertMarkdownToDocx() {

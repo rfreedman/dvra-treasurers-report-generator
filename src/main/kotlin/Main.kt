@@ -1,11 +1,9 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+// import androidx.compose.foundation.layout.BoxScopeInstance.align
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
+import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,14 +13,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.AwtWindow
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
+import kotlinx.coroutines.launch
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 import java.io.FilenameFilter
 
+@OptIn(DelicateCoroutinesApi::class)
 @Composable
 @Preview
 fun app() {
+
     val numericRegex = Regex(pattern = "^[0-9]+$")
     val numericWithDecimalRegex = Regex(pattern = "^[0-9]+\\.$")
     val moneyRegex = Regex(pattern = "^[0-9]+\\.[0-9]?[0-9]?\$")
@@ -31,10 +37,16 @@ fun app() {
     var endingBalance by remember { mutableStateOf("") }
     var csvFileName by remember { mutableStateOf("") }
     var csvFile by remember { mutableStateOf<File?>(null) }
+    var keepMarkdown by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Input Data") }
 
     var isCsvFileOpenChooserOpen by remember { mutableStateOf(false) }
     var isPdfFileSaveChooserOpen by remember { mutableStateOf(false) }
+
+    val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        throwable.printStackTrace()
+        status = "Error: ${throwable.message}"
+    }
 
     val isCurrency: (String) -> Boolean = { value: String ->
         value.isEmpty()
@@ -60,24 +72,45 @@ fun app() {
     }
 
     if (isPdfFileSaveChooserOpen) {
+        status = ""
         pdfFileSaveDialog(
             fileName = getPdfFileNameFromCsvFilename(csvFileName),
             onCloseRequest = { directoryName: String, pdfFileName: String? ->
-                try {
-                    isPdfFileSaveChooserOpen = false
-                    if (pdfFileName !== null) {
-                        status = "Generating Report"
+
+                isPdfFileSaveChooserOpen = false
+                if (pdfFileName !== null) {
+                    status = "Generating Report"
+
+                    val channel = Channel<String>(CONFLATED)
+
+                    // launch a receiver process for the channel,
+                    // which will update the ui with status messages
+                    // sent by the report generator
+                    GlobalScope.launch {
+                        while (true) {
+                            val message = channel.receive()
+                            if (message === "Done!") {
+                                break
+                            }
+                            status = message
+                        }
+                        status = "Report Generated in " + File(directoryName, pdfFileName).path
+                   }
+
+                    // launch the report generator process, which will send status
+                    // messages via the channel
+                    GlobalScope.launch(exceptionHandler) { // @@
                         ReportGenerator.generate(
                             startingBalance,
                             endingBalance,
                             csvFile!!,
-                            File(directoryName, pdfFileName)
+                            File(directoryName, pdfFileName),
+                            keepMarkdown,
+                            channel
                         )
-                        status = "Report Generated in " + File(directoryName, pdfFileName).path
                     }
-                } catch(t: Throwable) {
-                    status = "Error: " + t.message
                 }
+
             }
         )
     }
@@ -131,7 +164,14 @@ fun app() {
                     Text("Generate Report")
                 }
 
-                Text(text = status, modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = 225.dp))
+                labeledCheckbox(
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
+                    label = "Keep Markdown",
+                    value = keepMarkdown,
+                    onValueChange = { newValue -> keepMarkdown = newValue }
+                )
+
+                Text(text = status, modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = 150.dp))
         }
     }
 }
@@ -174,6 +214,21 @@ private fun inputTextField(
         }
     )
 }
+
+@Composable
+fun labeledCheckbox(modifier: Modifier, label: String, value: Boolean, onValueChange: (value: Boolean) -> Unit) {
+    Row(modifier = Modifier.padding(8.dp).then(modifier)) {
+        Text(text = label, modifier = Modifier.align(Alignment.CenterVertically))
+        Checkbox(
+            modifier = Modifier.align(Alignment.CenterVertically),
+            checked = value,
+            onCheckedChange = onValueChange,
+            enabled = true,
+            colors = CheckboxDefaults.colors(Color.Blue)
+        )
+    }
+}
+
 
 private fun getPdfFileNameFromCsvFilename(csvFileName: String): String {
     return File(csvFileName).nameWithoutExtension.plus(".pdf")
