@@ -24,16 +24,33 @@ dependencies {
 
     // implementation("com.opencsv:opencsv:5.5.2") -- opencsv has packaging issues - a dependency beanutils, which has a dependency on commons logging
     implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.9.2")
+
+    // https://mvnrepository.com/artifact/com.mikepenz/multiplatform-markdown-renderer-jvm
+    implementation("com.mikepenz:multiplatform-markdown-renderer-jvm:0.7.0")
+
 }
+
+val resourceDirPath = rootDir.toPath().toString() + "/src/main/resources";
 
 compose.desktop {
     application {
         mainClass = "MainKt"
-
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "compose-desktop-demo"
+            packageName = "DVRA Treasurers Report Generator"
             packageVersion = "1.0.0"
+
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+
+            macOS {
+                iconFile.set(project.file(resourceDirPath + "/icon.icns"))
+            }
+            windows {
+                iconFile.set(project.file(resourceDirPath + "/icon.ico"))
+            }
+            linux {
+                iconFile.set(project.file(resourceDirPath + "/icon.png"))
+            }
+
         }
     }
 }

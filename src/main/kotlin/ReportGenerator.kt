@@ -40,6 +40,9 @@ object ReportGenerator {
     // private var keepMarkdown = false
 
     suspend fun generate(startingBal: String, endingBal: String, csvFile: File, pdfFile: File, keepMarkdown: Boolean, channel: Channel<String>) {
+
+        reset()
+
         println("start: $startingBal")
         println("end: $endingBal")
         println("csv: ${csvFile.path}")
@@ -58,6 +61,11 @@ object ReportGenerator {
         val csvData : List<List<String>>  = csvReader().readAll(dataLines)
 
         channel.send("Parsing CSV Rows")
+
+        if(csvData.isEmpty()) {
+            channel.send("No data read from file, report not generated")
+            return
+        }
 
         csvData.forEach { row ->
             processRow(row)
@@ -90,6 +98,18 @@ object ReportGenerator {
         }
 
         channel.send("Done!")
+    }
+
+    private fun reset() {
+        totalInflows = null
+        totalOutflows = null
+        netTotal = null
+
+        transactions = ArrayList<Transaction>()
+        creditCategories = HashMap<String, Category>()
+        debitCategories = HashMap<String, Category>()
+
+        processingRow = AtomicInteger(-1)
     }
 
     private fun processRow(row: List<String>) {
@@ -209,9 +229,20 @@ object ReportGenerator {
             .append("\n\n<p>&nbsp;</p>\n\n")
 
 
-        appendCreditCategoriesMarkdown(buf)
+        if(creditCategories.isEmpty()) {
+            appendNoCreditCategoriesMarkdown(buf)
+        } else {
+            appendCreditCategoriesMarkdown(buf)
+        }
+
         buf.append("\n\n<p>&nbsp;</p>\n\n")
-        appendExpenseCategoriesMarkdown(buf)
+
+        if(debitCategories.isEmpty()) {
+            appendNoExpenseCategoriesMarkdown(buf)
+        } else {
+            appendExpenseCategoriesMarkdown(buf)
+        }
+
         buf.append("\n\n<p>&nbsp;</p>\n\n")
         buf.append("\n\n<p>*Respectfully Submitted by Rich Freedman N2EHL, Treasurer*</p>\n\n")
         Files.write(File("report.md").toPath(), buf.toString().toByteArray(StandardCharsets.UTF_8))
@@ -240,6 +271,10 @@ object ReportGenerator {
         return WordUtils.capitalizeFully(transactionDate.month.name) + " " + transactionDate.year
     }
 
+    private fun appendNoCreditCategoriesMarkdown(buf: StringBuilder) {
+        buf.append("**Income By Category: No Income**\n\n")
+    }
+
     private fun appendCreditCategoriesMarkdown(buf: StringBuilder) {
         buf.append("**Income By Category**\n\n")
             .append("| **Category** | **Subcategory** | **Amount** | **Category Total** |\n")
@@ -260,6 +295,10 @@ object ReportGenerator {
 
         buf.append("| | | | |\n")
         buf.append("| ").append("**TOTAL**").append(" | | | **").append(totalCredits).append("** |\n")
+    }
+
+    private fun appendNoExpenseCategoriesMarkdown(buf: StringBuilder) {
+        buf.append("**Expenses By Category: No Expenses**\n\n")
     }
 
     private fun appendExpenseCategoriesMarkdown(buf: StringBuilder) {

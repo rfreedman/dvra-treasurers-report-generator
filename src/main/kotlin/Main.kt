@@ -1,18 +1,23 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-// import androidx.compose.foundation.layout.BoxScopeInstance.align
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.loadImageBitmap
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.useResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.AwtWindow
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import com.mikepenz.markdown.compose.Markdown
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
@@ -33,12 +38,32 @@ fun app() {
     val numericWithDecimalRegex = Regex(pattern = "^[0-9]+\\.$")
     val moneyRegex = Regex(pattern = "^[0-9]+\\.[0-9]?[0-9]?\$")
 
+    val instructions = """
+    **Instructions**
+
+    * In Quicken, select "All Accounts" and then export the month's transactions to a CSV file.  
+    ---
+    *  Enter the starting and ending balance for the month
+    ---     
+    * Select the CSV file that you exported  
+    ---          
+    * Select whether to output a PDF (default), Word Doc, or both  
+    ---
+    * If necessary for debugging, select to keep the intermediate Markdown file  
+    ---
+    * Click the "Generate Report" button and select the directory where it should be written  
+    """.trimIndent()
+
     var startingBalance by remember { mutableStateOf("") }
     var endingBalance by remember { mutableStateOf("") }
     var csvFileName by remember { mutableStateOf("") }
     var csvFile by remember { mutableStateOf<File?>(null) }
+
+    var generatePdf by remember { mutableStateOf(true) }
+    var generateWordDoc by remember { mutableStateOf(false) }
     var keepMarkdown by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Input Data") }
+
+    var status by remember { mutableStateOf(" ") }
 
     var isCsvFileOpenChooserOpen by remember { mutableStateOf(false) }
     var isPdfFileSaveChooserOpen by remember { mutableStateOf(false) }
@@ -117,6 +142,13 @@ fun app() {
 
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(0.dp, 40.dp), Arrangement.spacedBy(5.dp)) {
+
+                Image(painterResource("w2zq-transparent.png"), "DVRA", modifier = Modifier.align(alignment = Alignment.CenterHorizontally),)
+
+                Markdown(content = instructions,  modifier = Modifier.align(alignment = Alignment.CenterHorizontally).width(750.dp).padding(bottom = 40.dp))
+
+                Divider(modifier = Modifier.width(200.dp).align(Alignment.CenterHorizontally).padding(bottom = 40.dp), color = Color.Blue, thickness = 1.dp)
+
                 inputTextField(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
                     //modifier = Modifier,
@@ -151,7 +183,32 @@ fun app() {
                     Text("Choose csv File")
                 }
 
-                Text(text = csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Text(text = csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
+
+                Divider(modifier = Modifier.width(200.dp).align(Alignment.CenterHorizontally), color = Color.Blue, thickness = 1.dp)
+
+                labeledCheckbox(
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
+                    label = "Output PDF         ",
+                    value = generatePdf,
+                    onValueChange = { newValue -> generatePdf = newValue }
+                )
+
+                labeledCheckbox(
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
+                    label = "Output Word Doc",
+                    value = generateWordDoc,
+                    onValueChange = { newValue -> generateWordDoc = newValue }
+                )
+
+                labeledCheckbox(
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
+                    label = "Keep Markdown  ",
+                    value = keepMarkdown,
+                    onValueChange = { newValue -> keepMarkdown = newValue }
+                )
+
+                Text(text = status, modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = 100.dp))
 
                 Button(
                     colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
@@ -163,15 +220,6 @@ fun app() {
                     }) {
                     Text("Generate Report")
                 }
-
-                labeledCheckbox(
-                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
-                    label = "Keep Markdown",
-                    value = keepMarkdown,
-                    onValueChange = { newValue -> keepMarkdown = newValue }
-                )
-
-                Text(text = status, modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = 150.dp))
         }
     }
 }
@@ -218,7 +266,7 @@ private fun inputTextField(
 @Composable
 fun labeledCheckbox(modifier: Modifier, label: String, value: Boolean, onValueChange: (value: Boolean) -> Unit) {
     Row(modifier = Modifier.padding(8.dp).then(modifier)) {
-        Text(text = label, modifier = Modifier.align(Alignment.CenterVertically))
+
         Checkbox(
             modifier = Modifier.align(Alignment.CenterVertically),
             checked = value,
@@ -226,6 +274,8 @@ fun labeledCheckbox(modifier: Modifier, label: String, value: Boolean, onValueCh
             enabled = true,
             colors = CheckboxDefaults.colors(Color.Blue)
         )
+
+        Text(text = label, modifier = Modifier.align(Alignment.CenterVertically))
     }
 }
 
@@ -292,7 +342,7 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "DVRA Treasurer's Report Generator",
-        // state = rememberWindowState(width = 300.dp, height = 300.dp)
+        state = rememberWindowState(width = 800.dp, height = 1175.dp)
     ) {
         app()
     }

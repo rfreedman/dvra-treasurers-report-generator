@@ -10,4 +10,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "compose-desktop-demo"
+rootProject.name = "DVRA Treasurers Report Generator"
