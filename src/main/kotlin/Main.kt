@@ -382,7 +382,7 @@ private fun getConfig(): Config? {
         println("xelatexDir entry in config")
     }
 
-    return Config(pandocPath.toString(), xelatexDir.toString())
+    return Config(pandocPath.toString(), xelatexDir.toString(), "Rich Freedman N2EHL")
 }
 
 fun main() = application {
