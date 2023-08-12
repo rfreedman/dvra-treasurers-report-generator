@@ -4,13 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.useResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.AwtWindow
@@ -24,10 +24,13 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
 import kotlinx.coroutines.launch
+import java.awt.Desktop
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
+import java.io.FileInputStream
 import java.io.FilenameFilter
+import java.util.*
 
 @OptIn(DelicateCoroutinesApi::class)
 @Composable
@@ -46,8 +49,6 @@ fun app() {
     *  Enter the starting and ending balance for the month
     ---     
     * Select the CSV file that you exported  
-    ---          
-    * Select whether to output a PDF (default), Word Doc, or both  
     ---
     * If necessary for debugging, select to keep the intermediate Markdown file  
     ---
@@ -59,11 +60,9 @@ fun app() {
     var csvFileName by remember { mutableStateOf("") }
     var csvFile by remember { mutableStateOf<File?>(null) }
 
-    var generatePdf by remember { mutableStateOf(true) }
-    var generateWordDoc by remember { mutableStateOf(false) }
     var keepMarkdown by remember { mutableStateOf(false) }
 
-    var status by remember { mutableStateOf(" ") }
+    var status by remember { mutableStateOf("") }
 
     var isCsvFileOpenChooserOpen by remember { mutableStateOf(false) }
     var isPdfFileSaveChooserOpen by remember { mutableStateOf(false) }
@@ -103,6 +102,7 @@ fun app() {
             onCloseRequest = { directoryName: String, pdfFileName: String? ->
 
                 isPdfFileSaveChooserOpen = false
+
                 if (pdfFileName !== null) {
                     status = "Generating Report"
 
@@ -120,14 +120,22 @@ fun app() {
                             status = message
                         }
                         status = "Report Generated in " + File(directoryName, pdfFileName).path
+
+                        if (Desktop.isDesktopSupported()) {
+                            Desktop.getDesktop().open(File(directoryName, pdfFileName));
+                        } else {
+                            System.out.println("Awt Desktop is not supported!");
+                        }
                    }
 
                     // launch the report generator process, which will send status
                     // messages via the channel
-                    GlobalScope.launch(exceptionHandler) { // @@
+                    GlobalScope.launch(exceptionHandler) {
                         ReportGenerator.generate(
                             startingBalance,
                             endingBalance,
+                            getConfig()!!.pandocPath, // todo - get the config on startup, make sure that it is valid,
+                            getConfig()!!.xelatexDir,
                             csvFile!!,
                             File(directoryName, pdfFileName),
                             keepMarkdown,
@@ -143,15 +151,24 @@ fun app() {
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(0.dp, 40.dp), Arrangement.spacedBy(5.dp)) {
 
-                Image(painterResource("w2zq-transparent.png"), "DVRA", modifier = Modifier.align(alignment = Alignment.CenterHorizontally),)
+                Image(painterResource("w2zq-transparent.png"), "DVRA", modifier = Modifier.align(alignment = Alignment.CenterHorizontally))
 
-                Markdown(content = instructions,  modifier = Modifier.align(alignment = Alignment.CenterHorizontally).width(750.dp).padding(bottom = 40.dp))
+                Box(
+                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
+                        .width(750.dp).padding(bottom = 40.dp)
+                        .height(300.dp)
+                ) {
+                    Markdown(
+                        content = instructions
+                    )
+                }
+
+
 
                 Divider(modifier = Modifier.width(200.dp).align(Alignment.CenterHorizontally).padding(bottom = 40.dp), color = Color.Blue, thickness = 1.dp)
 
                 inputTextField(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
-                    //modifier = Modifier,
                     label = "Starting Balance",
                     value = startingBalance,
                     onValueChange = {
@@ -187,6 +204,7 @@ fun app() {
 
                 Divider(modifier = Modifier.width(200.dp).align(Alignment.CenterHorizontally), color = Color.Blue, thickness = 1.dp)
 
+            /*
                 labeledCheckbox(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
                     label = "Output PDF         ",
@@ -200,7 +218,7 @@ fun app() {
                     value = generateWordDoc,
                     onValueChange = { newValue -> generateWordDoc = newValue }
                 )
-
+            */
                 labeledCheckbox(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
                     label = "Keep Markdown  ",
@@ -251,7 +269,6 @@ private fun inputTextField(
             Row(
                 Modifier.width(fieldWidth)
             ) {
-                // Icon(Icons.Default.MailOutline, contentDescription = null)
                 Text(
                     text = "$label:",
                     modifier = Modifier.height(fieldHeight).background(Color(0x55CCCCCC)) // ARGB
@@ -293,7 +310,6 @@ private fun csvFileOpenDialog(
         object : FileDialog(parent, "Choose a file", LOAD) {
 
             override fun setVisible(value: Boolean) {
-                // setFilenameFilter(FilenameFilter { _, name -> name.endsWith(".csv") })
                 setFilenameFilter(fileNameFilterByExtension(".csv"))
                 super.setVisible(value)
                 if (value) {
@@ -338,11 +354,42 @@ private fun pdfFileSaveDialog(
     dispose = FileDialog::dispose
 )
 
+
+private fun getConfig(): Config? {
+    val userHomeDir = System.getProperty("user.home")
+    val configFile = File(userHomeDir, ".dvratrg")
+    if(!configFile.exists()) {
+        println("no config file")
+        return null
+    }
+
+    val prop = Properties()
+    FileInputStream(configFile).use { prop.load(it) }
+
+    // Print all properties
+    prop.stringPropertyNames()
+        .associateWith {prop.getProperty(it)}
+        .forEach { println(it) }
+
+    val pandocPath = prop.get("pandoc")
+    if(pandocPath == null) {
+        println("no pandoc entry in config")
+        return null
+    }
+
+    val xelatexDir = prop.get("xelatexDir")
+    if(xelatexDir == null) {
+        println("xelatexDir entry in config")
+    }
+
+    return Config(pandocPath.toString(), xelatexDir.toString())
+}
+
 fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "DVRA Treasurer's Report Generator",
-        state = rememberWindowState(width = 800.dp, height = 1175.dp)
+        state = rememberWindowState(width = 800.dp, height = 1024.dp)
     ) {
         app()
     }

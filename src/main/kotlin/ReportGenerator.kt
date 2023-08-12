@@ -4,8 +4,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withContext
 import org.apache.commons.text.WordUtils
 import java.io.File
+import java.io.IOException
 import java.math.BigDecimal
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
@@ -34,23 +34,29 @@ object ReportGenerator {
 
     private var processingRow = AtomicInteger(-1)
 
-    // todo: these were command-line options with default values, convert them to args or do away with them
-    private var createPdf = true
-    private var createDocx = false
-    // private var keepMarkdown = false
+    suspend fun generate(
+        startingBal: String,
+        endingBal: String,
+        pandocPath: String, // path to the pandoc executable
+        xelatexDir: String, // path to the xelatex installation directory
+        csvFile: File,
+        pdfFile: File,
+        keepMarkdown: Boolean,
+        channel: Channel<String>
+    ) {
 
-    suspend fun generate(startingBal: String, endingBal: String, csvFile: File, pdfFile: File, keepMarkdown: Boolean, channel: Channel<String>) {
+        /*
+        val processBuilder = ProcessBuilder()
+        val path = processBuilder.environment()["PATH"]
+        processBuilder.environment()["PATH"] = "${path}${ConfigUtil.envPathSeparator()}${xelatexDir}"
+        channel.send("pb path: ${processBuilder.environment()["PATH"]}")
+        return
+        */
 
         reset()
 
-        println("start: $startingBal")
-        println("end: $endingBal")
-        println("csv: ${csvFile.path}")
-        println("output: ${pdfFile.path}")
-
         this.startingBalance = BigDecimal(startingBal)
         this.endingBalance = BigDecimal(endingBal)
-
 
         channel.send("Reading CSV File")
 
@@ -78,22 +84,37 @@ object ReportGenerator {
         calculateTotals()
 
         channel.send("Writing Intermediate Markdown")
-        writeMarkdown()
 
-        if (createPdf) {
-            channel.send("Converting Markdown to PDF")
-            convertMarkdownToPdf(pdfFile.path)
+        val markdownPath = File(pdfFile.parentFile, "report.md").path
+        val pdfPath = pdfFile.path
+
+        try {
+            writeMarkdown(markdownPath)
+        } catch (ex: IOException) {
+            channel.send("failed to write markdown file to disk: ${ex.message}")
+            ex.printStackTrace()
+            return
         }
 
-        if (createDocx) {
-            convertMarkdownToDocx()
+
+
+        channel.send("Converting Markdown to PDF")
+        val pandocReturnCode = convertMarkdownToPdf(pandocPath, xelatexDir, markdownPath, pdfPath)
+        if(pandocReturnCode != 0) {
+            // channel.send("failed to execute pandoc - return code: $pandocReturnCode")
+            channel.send("p: $pandocPath m: $markdownPath")
+            return
         }
 
         if (!keepMarkdown) {
             channel.send("Deleting Intermediate Markdown")
             withContext(Dispatchers.IO) {
-                Files.delete(File("report.md").toPath())
-                println("markdown deleted")
+                try {
+                    Files.delete(File(markdownPath).toPath())
+                    println("markdown deleted")
+                } catch (ex: IOException) {
+                    channel.send("failed to delete markdown file")
+                }
             }
         }
 
@@ -105,9 +126,9 @@ object ReportGenerator {
         totalOutflows = null
         netTotal = null
 
-        transactions = ArrayList<Transaction>()
-        creditCategories = HashMap<String, Category>()
-        debitCategories = HashMap<String, Category>()
+        transactions = ArrayList()
+        creditCategories = HashMap()
+        debitCategories = HashMap()
 
         processingRow = AtomicInteger(-1)
     }
@@ -192,7 +213,7 @@ object ReportGenerator {
         }
     }
 
-    private fun writeMarkdown() {
+    private fun writeMarkdown(outputFilePath: String) {
         val buf = StringBuilder()
         writeMarkdownYamlHeader(buf)
 
@@ -245,7 +266,20 @@ object ReportGenerator {
 
         buf.append("\n\n<p>&nbsp;</p>\n\n")
         buf.append("\n\n<p>*Respectfully Submitted by Rich Freedman N2EHL, Treasurer*</p>\n\n")
-        Files.write(File("report.md").toPath(), buf.toString().toByteArray(StandardCharsets.UTF_8))
+
+        val file = File(outputFilePath)
+
+        if(!file.exists()) {
+            file.createNewFile()
+        }
+
+        if(file.canWrite()) {
+            println("writing markdown file: ${file.path}")
+            file.writeText(buf.toString())
+        } else {
+            println("can't write markdown file: ${file.path}")
+            throw IOException("unable to write md file: ${file.toPath()}")
+        }
     }
 
     private fun writeMarkdownYamlHeader(sb: StringBuilder) {
@@ -325,25 +359,59 @@ object ReportGenerator {
         buf.append("| ").append("**TOTAL**").append(" | | | **").append(totalDebits).append("** |\n")
     }
 
-    private fun convertMarkdownToPdf(path: String) {
-        val process = ProcessBuilder()
+    private fun createProcessBuilder(xelatexDir: String): ProcessBuilder {
+        // process builder with the xelatex directory appended to it's path
+        val processBuilder = ProcessBuilder()
+        val path = processBuilder.environment()["PATH"]
+        val pathSeparator = ConfigUtil.envPathSeparator()
+        processBuilder.environment()["PATH"] = "$path$pathSeparator$xelatexDir"
+        return processBuilder
+    }
+
+    private fun convertMarkdownToPdf(pandocPath: String, xelatexDir: String, markdownPath: String, pdfPath: String): Int {
+        val process = createProcessBuilder(xelatexDir)
             .inheritIO()
             .command(
-                "pandoc",
+                pandocPath,
                 "--pdf-engine",
                 "xelatex",
                 "-s",
                 "-o",
-                path,
-                "report.md"
+                pdfPath,
+                markdownPath
             )
             .start()
-        process.waitFor()
+        val processResult = process.waitFor()
+        println("pandoc process result = $processResult")
+        return processResult
     }
 
-    private fun convertMarkdownToDocx() {
-        TODO("Not yet implemented")
+    /*
+    private fun convertMarkdownToDocx(path: String) {
+        println("Converting Markdown to Docx")
+        try {
+            val process = ProcessBuilder()
+                .inheritIO()
+                .command(
+                    "pandoc",
+                    "-f",
+                    "markdown",
+                    "-t",
+                    "docx",
+                    "-o",
+                    path,
+                    "report.md"
+                )
+                .start()
+            process.waitFor()
+            println("Done!")
+        } catch (e: IOException) {
+            e.printStackTrace()
+        } catch (e: InterruptedException) {
+            e.printStackTrace()
+        }
     }
+   */
 
     private fun isDate(str: String): Boolean {
         if (str.length < 8 || str.length > 10) {
