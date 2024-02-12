@@ -1,0 +1,1 @@
+# DVRA Treasurer's Report Generator [![Java CI with Gradle](https://github.com/rfreedman/dvra-treasurers-report-generator/actions/workflows/gradle.yml/badge.svg)](https://github.com/rfreedman/dvra-treasurers-report-generator/actions/workflows/gradle.yml)
