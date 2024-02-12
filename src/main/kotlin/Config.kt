@@ -1,7 +1,7 @@
 import java.util.*
 
 data class Config(
-    val signature: String, // Treasurer's Name and Callsign for signature
+    val author: String, // Treasurer's Name and Callsign for signature
     val pandocPath: String, // path to the "pandoc" executable
     val xelatexDir: String  // path to the xelatex directory, e.g. /Library/TeX/texbin on MAC OS
 ) {

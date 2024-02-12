@@ -132,6 +132,7 @@ fun app() {
                     // messages via the channel
                     GlobalScope.launch(exceptionHandler) {
                         ReportGenerator.generate(
+                            getConfig()!!.author,
                             startingBalance,
                             endingBalance,
                             getConfig()!!.pandocPath, // todo - get the config on startup, make sure that it is valid,
@@ -382,7 +383,12 @@ private fun getConfig(): Config? {
         println("xelatexDir entry in config")
     }
 
-    return Config(pandocPath.toString(), xelatexDir.toString(), "Rich Freedman N2EHL")
+    val author = prop.get("author")
+    if(author == null) {
+        println("author entry not in config")
+    }
+
+    return Config(author = author.toString(), pandocPath = pandocPath.toString(), xelatexDir = xelatexDir.toString())
 }
 
 fun main() = application {

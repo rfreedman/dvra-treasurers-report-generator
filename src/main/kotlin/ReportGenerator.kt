@@ -35,6 +35,7 @@ object ReportGenerator {
     private var processingRow = AtomicInteger(-1)
 
     suspend fun generate(
+        author: String,
         startingBal: String,
         endingBal: String,
         pandocPath: String, // path to the pandoc executable
@@ -44,15 +45,6 @@ object ReportGenerator {
         keepMarkdown: Boolean,
         channel: Channel<String>
     ) {
-
-        /*
-        val processBuilder = ProcessBuilder()
-        val path = processBuilder.environment()["PATH"]
-        processBuilder.environment()["PATH"] = "${path}${ConfigUtil.envPathSeparator()}${xelatexDir}"
-        channel.send("pb path: ${processBuilder.environment()["PATH"]}")
-        return
-        */
-
         reset()
 
         this.startingBalance = BigDecimal(startingBal)
@@ -89,7 +81,7 @@ object ReportGenerator {
         val pdfPath = pdfFile.path
 
         try {
-            writeMarkdown(markdownPath)
+            writeMarkdown(author, markdownPath)
         } catch (ex: IOException) {
             channel.send("failed to write markdown file to disk: ${ex.message}")
             ex.printStackTrace()
@@ -213,9 +205,9 @@ object ReportGenerator {
         }
     }
 
-    private fun writeMarkdown(outputFilePath: String) {
+    private fun writeMarkdown(author: String, outputFilePath: String) {
         val buf = StringBuilder()
-        writeMarkdownYamlHeader(buf)
+        writeMarkdownYamlHeader(author, buf)
 
         val reportPeriodString = getReportPeriodString()
 
@@ -265,7 +257,7 @@ object ReportGenerator {
         }
 
         buf.append("\n\n<p>&nbsp;</p>\n\n")
-        buf.append("\n\n<p>*Respectfully Submitted by Rich Freedman N2EHL, Treasurer*</p>\n\n")
+        buf.append("\n\n<p>*Respectfully Submitted by $author, Treasurer*</p>\n\n")
 
         val file = File(outputFilePath)
 
@@ -282,10 +274,10 @@ object ReportGenerator {
         }
     }
 
-    private fun writeMarkdownYamlHeader(sb: StringBuilder) {
+    private fun writeMarkdownYamlHeader(author: String, sb: StringBuilder) {
         sb
             .append("---\n")
-            .append("author: Rich Freedman N2EHL\n")
+            .append("author: $author\n")
             .append("mainfont: Consolas\n")
             .append("geometry: margin=2cm\n")
             .append("header-includes:\n")
