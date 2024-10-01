@@ -13,7 +13,8 @@ import kotlin.text.Charsets.UTF_8
 
 object ReportGenerator {
 
-    private const val BOM = "\uFEFF"
+    // private const val BOM = "\uFEFF"
+    private const val TRANSACTION_START = ",,,\"" // was BOM, but as of 10/1/2024, getting no BOM, just first 3 cols empty
 
     private const val COL_DATE = 3
     private const val COL_PAYEE = 5
@@ -443,24 +444,30 @@ object ReportGenerator {
      *
      * And finally, even though the file contains UTF_16 BOMs, the file is actually UTF_8
      * (attempting to read it as UTF_16 fails)...
+     *
+     * ****
+     * **** Update 2024-10-01 - no more BOMs - now transactions just have the first 3 columns empty ***
+     * ****
      */
     private fun extractCsvData(csvFile: File): String {
         val allLines = csvFile.readLines(charset = UTF_8)
 
-        // filter to just lines starting with a BOM (all data lines do, but so do some others)
+        // filter to just the transactions
         val dataLines = allLines.filter { line ->
-            line.startsWith(BOM)
+            line.startsWith(TRANSACTION_START)
         }
-        .map {line -> line.substring(1)}  // remove the BOM from the lines
-        .filter {line ->                            // remove the non-data lines (that are known at the moment)
+
+        // val dataLinesNoBom = dataLines.map {line -> line.substring(1)};  // remove the BOM from the lines
+
+        val dataLinesFiltered = dataLines.filter {line ->  // remove the non-transactions lines (that are known at the moment)
             !line.startsWith("All Transactions")
-                    && !line.startsWith("Filter Criteria")
-                    && !line.startsWith(",\"Scheduled\"")
-                    && !line.startsWith("Total Inflows")
+            && !line.startsWith("Filter Criteria")
+            && !line.startsWith(",\"Scheduled\"")
+            && !line.startsWith("Total Inflows")
         }
 
         // put it all back together so that it can be fed to the parser as a single string
-        return dataLines.joinToString(separator = "\n")
+        return dataLinesFiltered.joinToString(separator = "\n")
     }
 }
 
