@@ -15,6 +15,7 @@ object ReportGenerator {
 
     // private const val BOM = "\uFEFF"
     private const val TRANSACTION_START = ",,,\"" // was BOM, but as of 10/1/2024, getting no BOM, just first 3 cols empty
+    private const val SPLIT_TRANSACTION_START = ",,\"S\",\"" // a split transaction has a double-quoted capital S in the 3rd column
 
     private const val COL_DATE = 3
     private const val COL_PAYEE = 5
@@ -454,7 +455,7 @@ object ReportGenerator {
 
         // filter to just the transactions
         val dataLines = allLines.filter { line ->
-            line.startsWith(TRANSACTION_START)
+            line.startsWith(TRANSACTION_START) || line.startsWith(SPLIT_TRANSACTION_START)
         }
 
         // val dataLinesNoBom = dataLines.map {line -> line.substring(1)};  // remove the BOM from the lines

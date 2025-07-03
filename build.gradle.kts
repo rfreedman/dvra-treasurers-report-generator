@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "net.greybeardedgeek"
-version = "1.0-SNAPSHOT"
+version = "1.0.2"
 
 repositories {
     mavenCentral()
@@ -36,7 +36,7 @@ compose.desktop {
         mainClass = "MainKt"
         nativeDistributions {
             packageName = "DVRA Treasurers Report Generator"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.2"
 
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
 
