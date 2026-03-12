@@ -21,40 +21,40 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    # Configure Gradle for optimal use in GiHub Actions, including caching of downloaded dependencies.
-    # See: https://github.com/gradle/actions/blob/main/setup-gradle/README.md
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
+      # Configure Gradle for optimal use in GiHub Actions, including caching of downloaded dependencies.
+      # See: https://github.com/gradle/actions/blob/main/setup-gradle/README.md
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
 
-    - name: Build Linux Native Executable
-      run: ./gradlew createReleaseDistributable
+      - name: Build Linux Native Executable
+        run: ./gradlew createReleaseDistributable
 
-    - name: Publish Linux GitHub Release
-      id: create_linux_release
-      uses: [actions/create-release](https://github.com/marketplace/actions/create-release)@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: true # Start as a draft so you can manually review it
-        prerelease: false
+      - name: Publish Linux GitHub Release
+        id: create_linux_release
+        uses: [actions/create-release](https://github.com/marketplace/actions/create-release)@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: true # Start as a draft so you can manually review it
+          prerelease: false
 
-    - name: Upload Release Asset (Mac OS)
-      uses: [svenstaro/upload-release-action](https://github.com)@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: build/compose/binaries/main-release/app/DVRA-Treasurers-Report-Generator.app # Specify the path to your built file
-        asset_name: DVRA-Treasurers-Report-Generator-macos
-        tag: ${{ github.ref }}
-        overwrite: true
+      - name: Upload Release Asset (Mac OS)
+        uses: [svenstaro/upload-release-action](https://github.com)@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/compose/binaries/main-release/app/DVRA-Treasurers-Report-Generator.app # Specify the path to your built file
+          asset_name: DVRA-Treasurers-Report-Generator-macos
+          tag: ${{ github.ref }}
+          overwrite: true
 
 
   dependency-submission:
@@ -63,14 +63,14 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    # Generates and submits a dependency graph, enabling Dependabot Alerts for all project dependencies.
-    # See: https://github.com/gradle/actions/blob/main/dependency-submission/README.md
-    - name: Generate and submit dependency graph
-      uses: gradle/actions/dependency-submission@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
+      # Generates and submits a dependency graph, enabling Dependabot Alerts for all project dependencies.
+      # See: https://github.com/gradle/actions/blob/main/dependency-submission/README.md
+      - name: Generate and submit dependency graph
+        uses: gradle/actions/dependency-submission@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
