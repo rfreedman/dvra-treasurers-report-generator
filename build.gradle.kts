@@ -35,7 +35,7 @@ compose.desktop {
     application {
         mainClass = "MainKt"
         nativeDistributions {
-            packageName = "DVRA Treasurers Report Generator"
+            packageName = "DVRA-Treasurers-Report-Generator"
             packageVersion = "1.0.2"
 
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
