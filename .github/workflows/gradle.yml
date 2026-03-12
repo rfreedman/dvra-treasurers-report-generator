@@ -14,9 +14,9 @@ on:
     branches: [ ]
 
 jobs:
-  build:
+  build-release-macos:
 
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
 
@@ -33,22 +33,32 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
 
-    - name: Build with Gradle Wrapper
-      run: ./gradlew build
+    - name: Build Linux (Ubuntu) Native Executable
+      run: ./gradlew createReleaseDistributable
 
-    # NOTE: The Gradle Wrapper is the default and recommended way to run Gradle (https://docs.gradle.org/current/userguide/gradle_wrapper.html).
-    # If your project does not have the Gradle Wrapper configured, you can use the following configuration to run Gradle with a specified version.
-    #
-    # - name: Setup Gradle
-    #   uses: gradle/actions/setup-gradle@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
-    #   with:
-    #     gradle-version: '8.5'
-    #
-    # - name: Build with Gradle 8.5
-    #   run: gradle build
+
+    - name: Create Mac OS GitHub Release
+      id: create_linux_release
+      uses: [actions/create-release](https://github.com/marketplace/actions/create-release)@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: true # Start as a draft so you can manually review it
+        prerelease: false
+
+    - name: Upload Release Asset (Mac OS)
+      uses: [svenstaro/upload-release-action](https://github.com)@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: build/compose/binaries/main-release/app/DVRA-Treasurers-Report-Generator.app # Specify the path to your built file
+        asset_name: DVRA-Treasurers-Report-Generator-macos
+        tag: ${{ github.ref }}
+        overwrite: true
+
 
   dependency-submission:
-
     runs-on: ubuntu-latest
     permissions:
       contents: write
