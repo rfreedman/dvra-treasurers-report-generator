@@ -34,9 +34,9 @@ jobs:
       uses: gradle/actions/setup-gradle@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
 
     - name: Build Mac OS Native Executable
-      run: ./gradlew createReleaseDistributable
+      run: ./gradlew build
 
-    - name: Create Mac OS GitHub Release
+    - name: Publish Mac OS GitHub Release
       id: create_linux_release
       uses: [actions/create-release](https://github.com/marketplace/actions/create-release)@v1
       env:
