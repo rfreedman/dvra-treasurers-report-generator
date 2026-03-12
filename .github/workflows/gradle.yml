@@ -33,9 +33,8 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@ec92e829475ac0c2315ea8f9eced72db85bb337a # v3.0.0
 
-    - name: Build Linux (Ubuntu) Native Executable
+    - name: Build Mac OS Native Executable
       run: ./gradlew createReleaseDistributable
-
 
     - name: Create Mac OS GitHub Release
       id: create_linux_release
