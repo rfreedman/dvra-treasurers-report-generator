@@ -6,17 +6,22 @@ on:
       - main
 
 permissions:
-  contents: write          # Needed to create GitHub Releases
+  contents: write          # Required to create GitHub Releases
 
 # ---------------------------------------------------------------------------
 # Build matrix: each platform runs on its native runner.
+#
+# Node 24 compatibility note:
+#   - macos-13 runners are incompatible with Node 24 and have been removed.
+#   - macosArm64 (macos-latest) covers Apple Silicon; macosX64 cross-compiles
+#     from the same arm64 runner since Kotlin/Native supports it.
 # ---------------------------------------------------------------------------
 jobs:
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false     # Let all platforms finish even if one fails
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -24,12 +29,12 @@ jobs:
             artifact_name: app-linux-x64
             binary_path: build/bin/linuxX64/releaseExecutable
 
-          - os: macos-latest           # Apple Silicon runner
+          - os: macos-latest
             target: macosArm64
             artifact_name: app-macos-arm64
             binary_path: build/bin/macosArm64/releaseExecutable
 
-          - os: macos-13               # Intel runner for x64 target
+          - os: macos-latest             # Cross-compile x64 from the arm64 runner
             target: macosX64
             artifact_name: app-macos-x64
             binary_path: build/bin/macosX64/releaseExecutable
@@ -42,7 +47,7 @@ jobs:
     steps:
       # -----------------------------------------------------------------------
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4         # v4 — runs on Node 24 via runner default
 
       # -----------------------------------------------------------------------
       - name: Set up JDK 21
@@ -88,15 +93,12 @@ jobs:
 
       # -----------------------------------------------------------------------
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6  # v6 — Node 24
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}.zip
           if-no-files-found: error
 
-  # ---------------------------------------------------------------------------
-  # After all platform builds succeed, create a GitHub Release tagged with
-  # the short commit SHA (e.g. release/a1b2c3d).
   # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
@@ -105,22 +107,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4         # v4 — Node 24
         with:
           fetch-depth: 0
 
       # -----------------------------------------------------------------------
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7  # v7 — Node 24
         with:
           path: artifacts
 
       # -----------------------------------------------------------------------
-      # Derive a unique release tag from the short commit SHA so every push
-      # to main produces its own release without manual tagging.
-      - name: Resolve release tag
-        id: tag
-        run: echo "value=release/$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Derive version
+        id: version
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y.%m.%d)
+          echo "value=${DATE}-${SHA}" >> "$GITHUB_OUTPUT"
 
       # -----------------------------------------------------------------------
       - name: Generate changelog
@@ -139,13 +142,23 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # -----------------------------------------------------------------------
+      - name: Delete existing 'latest' release (if any)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+
+      # -----------------------------------------------------------------------
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.value }}
-          name: Release ${{ steps.tag.outputs.value }}
+          tag_name: latest
+          name: Latest Build (${{ steps.version.outputs.value }})
           body: |
-            ## What's changed
+            Automated build from `main` — commit `${{ github.sha }}`
+
+            ## Changes
             ${{ steps.changelog.outputs.notes }}
 
             ---
