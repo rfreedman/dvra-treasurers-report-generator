@@ -26,21 +26,25 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linuxX64
+            gradle_task: linkLinuxX64ReleaseExecutable
             artifact_name: app-linux-x64
             binary_path: build/bin/linuxX64/releaseExecutable
 
           - os: macos-latest
             target: macosArm64
+            gradle_task: linkMacosArm64ReleaseExecutable
             artifact_name: app-macos-arm64
             binary_path: build/bin/macosArm64/releaseExecutable
 
           - os: macos-latest             # Cross-compile x64 from the arm64 runner
             target: macosX64
+            gradle_task: linkMacosX64ReleaseExecutable
             artifact_name: app-macos-x64
             binary_path: build/bin/macosX64/releaseExecutable
 
           - os: windows-latest
             target: mingwX64
+            gradle_task: linkMingwX64ReleaseExecutable
             artifact_name: app-windows-x64
             binary_path: build/bin/mingwX64/releaseExecutable
 
@@ -75,7 +79,7 @@ jobs:
 
       # -----------------------------------------------------------------------
       - name: Build release binary
-        run: ./gradlew link${{ matrix.target }}ReleaseExecutable --stacktrace
+        run: ./gradlew ${{ matrix.gradle_task }} --stacktrace
         shell: bash
 
       # -----------------------------------------------------------------------
