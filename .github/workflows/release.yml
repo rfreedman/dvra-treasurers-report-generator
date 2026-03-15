@@ -50,7 +50,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
       # -----------------------------------------------------------------------
       - name: Cache Gradle dependencies
@@ -62,6 +62,16 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
+
+      # -----------------------------------------------------------------------
+      # Explicitly override JAVA_HOME so Gradle and the Compose packaging tools
+      # (ProGuard) use the JDK 17 we installed above and not any system JDK 21
+      # that may be present on the runner (ProGuard max supported: Java 18).
+      - name: Override JAVA_HOME to JDK 17
+        shell: bash
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
 
       # -----------------------------------------------------------------------
       - name: Make Gradle wrapper executable (Linux / macOS)
