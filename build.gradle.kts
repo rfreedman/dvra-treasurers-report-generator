@@ -5,6 +5,10 @@ plugins {
     id("org.jetbrains.compose")
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 group = "net.greybeardedgeek"
 version = "1.0.2"
 
