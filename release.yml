@@ -1,0 +1,154 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write          # Required to create GitHub Releases
+
+# ---------------------------------------------------------------------------
+# Each platform must build its own installer natively:
+#   macOS   → .dmg  (packageReleaseDmg)
+#   Windows → .msi  (packageReleaseMsi)
+#   Linux   → .deb  (packageReleaseDeb)
+# ---------------------------------------------------------------------------
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            gradle_task: packageReleaseDmg
+            artifact_name: app-macos
+            artifact_glob: build/compose/binaries/main-release/dmg/*.dmg
+
+          - os: windows-latest
+            gradle_task: packageReleaseMsi
+            artifact_name: app-windows
+            artifact_glob: build/compose/binaries/main-release/msi/*.msi
+
+          - os: ubuntu-latest
+            gradle_task: packageReleaseDeb
+            artifact_name: app-linux
+            artifact_glob: build/compose/binaries/main-release/deb/*.deb
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      # -----------------------------------------------------------------------
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # -----------------------------------------------------------------------
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # -----------------------------------------------------------------------
+      - name: Make Gradle wrapper executable (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
+
+      # -----------------------------------------------------------------------
+      - name: Build installer
+        run: ./gradlew ${{ matrix.gradle_task }} --stacktrace
+        shell: bash
+
+      # -----------------------------------------------------------------------
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # -----------------------------------------------------------------------
+      - name: Derive version
+        id: version
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y.%m.%d)
+          echo "value=${DATE}-${SHA}" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [[ -n "$PREV_TAG" ]]; then
+            LOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges | head -30)
+          fi
+          {
+            echo 'notes<<EOF'
+            echo "$LOG"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      - name: Delete existing 'latest' release (if any)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+
+      # -----------------------------------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build (${{ steps.version.outputs.value }})
+          body: |
+            Automated build from `main` — commit `${{ github.sha }}`
+
+            ## Changes
+            ${{ steps.changelog.outputs.notes }}
+
+            ---
+            | Platform | File |
+            |----------|------|
+            | macOS    | `.dmg` installer |
+            | Windows  | `.msi` installer |
+            | Linux    | `.deb` package   |
+          draft: false
+          prerelease: false
+          files: artifacts/**/*
