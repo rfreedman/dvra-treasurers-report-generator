@@ -1,0 +1,155 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write          # Needed to create GitHub Releases
+
+# ---------------------------------------------------------------------------
+# Build matrix: each platform runs on its native runner.
+# ---------------------------------------------------------------------------
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false     # Let all platforms finish even if one fails
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linuxX64
+            artifact_name: app-linux-x64
+            binary_path: build/bin/linuxX64/releaseExecutable
+
+          - os: macos-latest           # Apple Silicon runner
+            target: macosArm64
+            artifact_name: app-macos-arm64
+            binary_path: build/bin/macosArm64/releaseExecutable
+
+          - os: macos-13               # Intel runner for x64 target
+            target: macosX64
+            artifact_name: app-macos-x64
+            binary_path: build/bin/macosX64/releaseExecutable
+
+          - os: windows-latest
+            target: mingwX64
+            artifact_name: app-windows-x64
+            binary_path: build/bin/mingwX64/releaseExecutable
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # -----------------------------------------------------------------------
+      - name: Cache Gradle & Kotlin/Native toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-gradle-konan-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-konan-
+
+      # -----------------------------------------------------------------------
+      - name: Make Gradle wrapper executable (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
+
+      # -----------------------------------------------------------------------
+      - name: Build release binary
+        run: ./gradlew link${{ matrix.target }}ReleaseExecutable --stacktrace
+        shell: bash
+
+      # -----------------------------------------------------------------------
+      - name: Package binary (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd ${{ matrix.binary_path }}
+          zip -r ../../../../${{ matrix.artifact_name }}.zip .
+
+      - name: Package binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "${{ matrix.binary_path }}\*" -DestinationPath "${{ matrix.artifact_name }}.zip"
+
+      # -----------------------------------------------------------------------
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.zip
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # After all platform builds succeed, create a GitHub Release tagged with
+  # the short commit SHA (e.g. release/a1b2c3d).
+  # ---------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # -----------------------------------------------------------------------
+      # Derive a unique release tag from the short commit SHA so every push
+      # to main produces its own release without manual tagging.
+      - name: Resolve release tag
+        id: tag
+        run: echo "value=release/$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [[ -n "$PREV_TAG" ]]; then
+            LOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges | head -30)
+          fi
+          {
+            echo 'notes<<EOF'
+            echo "$LOG"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.value }}
+          name: Release ${{ steps.tag.outputs.value }}
+          body: |
+            ## What's changed
+            ${{ steps.changelog.outputs.notes }}
+
+            ---
+            *Binaries are attached below for each supported platform.*
+          draft: false
+          prerelease: false
+          files: artifacts/**/*.zip
