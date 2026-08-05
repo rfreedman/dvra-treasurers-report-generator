@@ -1,23 +1,20 @@
-import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.AwtWindow
+import androidx.compose.ui.awt.AwtWindow
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.mikepenz.markdown.compose.Markdown
+import com.mikepenz.markdown.m2.Markdown
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
@@ -152,7 +149,7 @@ fun app() {
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(0.dp, 40.dp), Arrangement.spacedBy(5.dp)) {
 
-                Image(painterResource("w2zq-transparent.png"), "DVRA", modifier = Modifier.align(alignment = Alignment.CenterHorizontally))
+                Image(classpathPainterResource("w2zq-transparent.png"), "DVRA", modifier = Modifier.align(alignment = Alignment.CenterHorizontally))
 
                 Box(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally)

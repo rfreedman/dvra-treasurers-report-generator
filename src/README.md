@@ -1,5 +1,12 @@
-# TODO:
- * control where the intermediate Markdown file gets written
-    - consider writing it to the pdf destination folder
+# Source notes / TODOs
 
- * options for creating Pdf and for creating Word file? (require at least one)
+## Done
+
+* Intermediate Markdown is written next to the chosen PDF
+  (`<pdf-dir>/report.md`) and deleted unless **Keep Markdown** is checked.
+
+## Open
+
+* Options for creating PDF and/or Word output (require at least one).
+  Word export UI and `convertMarkdownToDocx` are currently commented out;
+  only PDF generation is active.
