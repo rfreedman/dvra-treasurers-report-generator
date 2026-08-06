@@ -35,7 +35,7 @@ jobs:
             artifact_name: app-windows
             artifact_glob: build/compose/binaries/main-release/msi/*.msi
 
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             gradle_task: packageReleaseDeb
             artifact_name: app-linux
             artifact_glob: build/compose/binaries/main-release/deb/*.deb
@@ -75,7 +75,7 @@ jobs:
 
       # -----------------------------------------------------------------------
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_glob }}
@@ -85,7 +85,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -95,7 +95,7 @@ jobs:
 
       # -----------------------------------------------------------------------
       - name: Download all installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 
