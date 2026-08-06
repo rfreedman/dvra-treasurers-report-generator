@@ -1,46 +1,49 @@
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.AwtWindow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.awt.AwtWindow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.mikepenz.markdown.m2.Markdown
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
-import java.io.FileInputStream
 import java.io.FilenameFilter
-import java.util.*
 
-@OptIn(DelicateCoroutinesApi::class)
 @Composable
 @Preview
 fun app() {
+    val scope = rememberCoroutineScope()
 
     val numericRegex = Regex(pattern = "^[0-9]+$")
     val numericWithDecimalRegex = Regex(pattern = "^[0-9]+\\.$")
     val moneyRegex = Regex(pattern = "^[0-9]+\\.[0-9]?[0-9]?\$")
 
     val instructions = """
-    **Instructions**
-
     * In Quicken, select "All Accounts" and then export the month's transactions to a CSV file.  
     ---
     *  Enter the starting and ending balance for the month
@@ -58,16 +61,13 @@ fun app() {
     var csvFile by remember { mutableStateOf<File?>(null) }
 
     var keepMarkdown by remember { mutableStateOf(false) }
+    var instructionsExpanded by remember { mutableStateOf(false) }
 
     var status by remember { mutableStateOf("") }
+    var isGenerating by remember { mutableStateOf(false) }
 
     var isCsvFileOpenChooserOpen by remember { mutableStateOf(false) }
     var isPdfFileSaveChooserOpen by remember { mutableStateOf(false) }
-
-    val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        throwable.printStackTrace()
-        status = "Error: ${throwable.message}"
-    }
 
     val isCurrency: (String) -> Boolean = { value: String ->
         value.isEmpty()
@@ -82,88 +82,126 @@ fun app() {
 
     if (isCsvFileOpenChooserOpen) {
         csvFileOpenDialog(
+            initialDirectory = loadLastDirectory(DirectoryPrefs.KEY_CSV),
             onCloseRequest = { directoryPath, fileName ->
                 isCsvFileOpenChooserOpen = false
-                if (fileName !== null) {
+                if (fileName != null) {
                     csvFileName = fileName
                     csvFile = File(directoryPath, fileName)
+                    saveLastDirectory(DirectoryPrefs.KEY_CSV, File(directoryPath))
                 }
             }
         )
     }
 
     if (isPdfFileSaveChooserOpen) {
-        status = ""
         pdfFileSaveDialog(
             fileName = getPdfFileNameFromCsvFilename(csvFileName),
+            initialDirectory = loadLastDirectory(DirectoryPrefs.KEY_PDF),
             onCloseRequest = { directoryName: String, pdfFileName: String? ->
-
                 isPdfFileSaveChooserOpen = false
 
-                if (pdfFileName !== null) {
-                    status = "Generating Report"
-
-                    val channel = Channel<String>(CONFLATED)
-
-                    // launch a receiver process for the channel,
-                    // which will update the ui with status messages
-                    // sent by the report generator
-                    GlobalScope.launch {
-                        while (true) {
-                            val message = channel.receive()
-                            if (message === "Done!") {
-                                break
-                            }
-                            status = message
-                        }
-                        status = "Report Generated in " + File(directoryName, pdfFileName).path
-
-                        if (Desktop.isDesktopSupported()) {
-                            Desktop.getDesktop().open(File(directoryName, pdfFileName));
-                        } else {
-                            System.out.println("Awt Desktop is not supported!");
-                        }
-                   }
-
-                    // launch the report generator process, which will send status
-                    // messages via the channel
-                    GlobalScope.launch(exceptionHandler) {
-                        ReportGenerator.generate(
-                            getConfig()!!.author,
-                            startingBalance,
-                            endingBalance,
-                            getConfig()!!.pandocPath, // todo - get the config on startup, make sure that it is valid,
-                            getConfig()!!.xelatexDir,
-                            csvFile!!,
-                            File(directoryName, pdfFileName),
-                            keepMarkdown,
-                            channel
-                        )
-                    }
+                if (pdfFileName == null) {
+                    return@pdfFileSaveDialog
                 }
 
+                saveLastDirectory(DirectoryPrefs.KEY_PDF, File(directoryName))
+
+                val selectedCsv = csvFile
+                if (selectedCsv == null) {
+                    status = "No CSV file selected"
+                    return@pdfFileSaveDialog
+                }
+
+                val pdfOut = File(directoryName, pdfFileName)
+                status = "Generating Report"
+                isGenerating = true
+
+                scope.launch {
+                    try {
+                        val channel = Channel<String>(capacity = 64)
+                        val worker = launch(Dispatchers.IO) {
+                            runReportGeneration(
+                                ReportGenerationRequest(
+                                    startingBalance = startingBalance,
+                                    endingBalance = endingBalance,
+                                    csvFile = selectedCsv,
+                                    pdfFile = pdfOut,
+                                    keepMarkdown = keepMarkdown
+                                ),
+                                channel
+                            )
+                        }
+
+                        for (message in channel) {
+                            when (val parsed = ReportStatus.parse(message)) {
+                                is ReportStatus.Message.Done -> {
+                                    status = "Report Generated in ${pdfOut.path}"
+                                    if (Desktop.isDesktopSupported()) {
+                                        withContext(Dispatchers.IO) {
+                                            Desktop.getDesktop().open(pdfOut)
+                                        }
+                                    } else {
+                                        println("Awt Desktop is not supported!")
+                                    }
+                                }
+                                is ReportStatus.Message.Failed -> {
+                                    status = parsed.text
+                                }
+                                is ReportStatus.Message.Progress -> {
+                                    status = parsed.text
+                                }
+                            }
+                        }
+                        worker.join()
+                    } finally {
+                        isGenerating = false
+                    }
+                }
             }
         )
     }
 
     MaterialTheme {
-        Column(Modifier.fillMaxSize().padding(0.dp, 40.dp), Arrangement.spacedBy(5.dp)) {
+        val scrollState = rememberScrollState()
+
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 0.dp, vertical = 28.dp)
+                    .padding(end = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
 
                 Image(classpathPainterResource("w2zq-transparent.png"), "DVRA", modifier = Modifier.align(alignment = Alignment.CenterHorizontally))
 
-                Box(
-                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
-                        .width(750.dp).padding(bottom = 40.dp)
-                        .height(300.dp)
+                TextButton(
+                    onClick = { instructionsExpanded = !instructionsExpanded },
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) {
-                    Markdown(
-                        content = instructions
+                    Text(
+                        text = if (instructionsExpanded) "Instructions ▼" else "Instructions ▶",
+                        color = Color.Blue
                     )
                 }
 
+                if (instructionsExpanded) {
+                    Box(
+                        modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
+                            .fillMaxWidth()
+                            .padding(horizontal = 40.dp)
+                            .padding(bottom = 12.dp)
+                            .height(280.dp)
+                    ) {
+                        Markdown(
+                            content = instructions
+                        )
+                    }
+                }
 
-
-                Divider(modifier = Modifier.width(200.dp).align(Alignment.CenterHorizontally).padding(bottom = 40.dp), color = Color.Blue, thickness = 1.dp)
+                Divider(modifier = Modifier.width(200.dp).align(Alignment.CenterHorizontally).padding(bottom = 48.dp), color = Color.Blue, thickness = 1.dp)
 
                 inputTextField(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
@@ -178,7 +216,7 @@ fun app() {
 
                 inputTextField(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
-                        .padding(0.dp, 20.dp, 0.dp, 20.dp),
+                        .padding(vertical = 14.dp),
                     label = "Ending Balance  ",
                     value = endingBalance,
                     onValueChange = {
@@ -191,32 +229,17 @@ fun app() {
                 Button(
                     colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
-                        .padding(0.dp, 20.dp, 0.dp, 20.dp),
+                        .padding(top = 14.dp, bottom = 7.dp),
                     onClick = {
                         isCsvFileOpenChooserOpen = true
                     }) {
                     Text("Choose csv File")
                 }
 
-                Text(text = csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
+                Text(text = csvFileName, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 7.dp))
 
                 Divider(modifier = Modifier.width(200.dp).align(Alignment.CenterHorizontally), color = Color.Blue, thickness = 1.dp)
 
-            /*
-                labeledCheckbox(
-                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
-                    label = "Output PDF         ",
-                    value = generatePdf,
-                    onValueChange = { newValue -> generatePdf = newValue }
-                )
-
-                labeledCheckbox(
-                    modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
-                    label = "Output Word Doc",
-                    value = generateWordDoc,
-                    onValueChange = { newValue -> generateWordDoc = newValue }
-                )
-            */
                 labeledCheckbox(
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally),
                     label = "Keep Markdown  ",
@@ -224,18 +247,43 @@ fun app() {
                     onValueChange = { newValue -> keepMarkdown = newValue }
                 )
 
-                Text(text = status, modifier = Modifier.align(Alignment.CenterHorizontally).offset(y = 100.dp))
-
                 Button(
                     colors = ButtonDefaults.buttonColors(backgroundColor = Color.Blue, contentColor = Color.White),
                     modifier = Modifier.align(alignment = Alignment.CenterHorizontally)
-                        .then(Modifier.padding(vertical = 10.dp)),
-                    enabled = haveAllInput(),
+                        .padding(top = 4.dp, bottom = 4.dp),
+                    enabled = haveAllInput() && !isGenerating,
                     onClick = {
+                        status = ""
                         isPdfFileSaveChooserOpen = true
                     }) {
                     Text("Generate Report")
                 }
+
+                Text(
+                    text = status,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 8.dp)
+                )
+            }
+
+            PlatformVerticalScrollbar(
+                scrollState = scrollState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(top = 28.dp, bottom = 8.dp, end = 2.dp)
+            )
+
+            Text(
+                text = AppBuildInfo.displayLabel(),
+                style = MaterialTheme.typography.caption,
+                color = Color.Black,
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 24.dp)
+            )
         }
     }
 }
@@ -260,10 +308,6 @@ private fun inputTextField(
         value = value,
         onValueChange = onValueChange,
         decorationBox = { innerTextField ->
-            // Because the decorationBox is used, the whole Row gets the same behaviour as the
-            // internal input field would have otherwise. For example, there is no need to add a
-            // Modifier.clickable to the Row anymore to bring the text field into focus when user
-            // taps on a larger text field area which includes paddings and the icon areas.
             Row(
                 Modifier.width(fieldWidth)
             ) {
@@ -280,17 +324,23 @@ private fun inputTextField(
 
 @Composable
 fun labeledCheckbox(modifier: Modifier, label: String, value: Boolean, onValueChange: (value: Boolean) -> Unit) {
-    Row(modifier = Modifier.padding(8.dp).then(modifier)) {
+    Row(modifier = Modifier.padding(vertical = 2.dp, horizontal = 4.dp).then(modifier)) {
 
         Checkbox(
-            modifier = Modifier.align(Alignment.CenterVertically),
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .scale(0.75f),
             checked = value,
             onCheckedChange = onValueChange,
             enabled = true,
             colors = CheckboxDefaults.colors(Color.Blue)
         )
 
-        Text(text = label, modifier = Modifier.align(Alignment.CenterVertically))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            modifier = Modifier.align(Alignment.CenterVertically)
+        )
     }
 }
 
@@ -302,6 +352,7 @@ private fun getPdfFileNameFromCsvFilename(csvFileName: String): String {
 @Composable
 private fun csvFileOpenDialog(
     parent: Frame? = null,
+    initialDirectory: File? = null,
     onCloseRequest: (directory: String, file: String?) -> Unit
 ) = AwtWindow(
     create = {
@@ -309,9 +360,12 @@ private fun csvFileOpenDialog(
 
             override fun setVisible(value: Boolean) {
                 setFilenameFilter(fileNameFilterByExtension(".csv"))
+                if (initialDirectory != null) {
+                    setDirectory(initialDirectory.absolutePath)
+                }
                 super.setVisible(value)
                 if (value) {
-                    if (file !== null) {
+                    if (file != null) {
                         onCloseRequest(this.directory, file)
                     } else {
                         onCloseRequest("", null)
@@ -330,6 +384,7 @@ private fun fileNameFilterByExtension(extension: String) : FilenameFilter = File
 private fun pdfFileSaveDialog(
     parent: Frame? = null,
     fileName: String,
+    initialDirectory: File? = null,
     onCloseRequest: (directory: String, file: String?) -> Unit
 ) = AwtWindow(
     create = {
@@ -337,10 +392,13 @@ private fun pdfFileSaveDialog(
 
             override fun setVisible(value: Boolean) {
                 setFilenameFilter(fileNameFilterByExtension(".pdf"))
+                if (initialDirectory != null) {
+                    setDirectory(initialDirectory.absolutePath)
+                }
                 setFile(fileName)
                 super.setVisible(value)
                 if (value) {
-                    if (file !== null) {
+                    if (file != null) {
                         onCloseRequest(this.directory, file)
                     } else {
                         onCloseRequest("", null)
@@ -352,48 +410,92 @@ private fun pdfFileSaveDialog(
     dispose = FileDialog::dispose
 )
 
-
-private fun getConfig(): Config? {
-    val userHomeDir = System.getProperty("user.home")
-    val configFile = File(userHomeDir, ".dvratrg")
-    if(!configFile.exists()) {
-        println("no config file")
-        return null
-    }
-
-    val prop = Properties()
-    FileInputStream(configFile).use { prop.load(it) }
-
-    // Print all properties
-    prop.stringPropertyNames()
-        .associateWith {prop.getProperty(it)}
-        .forEach { println(it) }
-
-    val pandocPath = prop.get("pandoc")
-    if(pandocPath == null) {
-        println("no pandoc entry in config")
-        return null
-    }
-
-    val xelatexDir = prop.get("xelatexDir")
-    if(xelatexDir == null) {
-        println("xelatexDir entry in config")
-    }
-
-    val author = prop.get("author")
-    if(author == null) {
-        println("author entry not in config")
-    }
-
-    return Config(author = author.toString(), pandocPath = pandocPath.toString(), xelatexDir = xelatexDir.toString())
-}
-
 fun main() = application {
+    val initialPlacement = remember { loadClampedWindowPlacement() }
+    val windowState = rememberWindowState(
+        position = WindowPosition(initialPlacement.x.dp, initialPlacement.y.dp),
+        width = initialPlacement.width.dp,
+        height = initialPlacement.height.dp
+    )
+
+    fun persistWindowPlacement() {
+        if (windowState.isMinimized) {
+            return
+        }
+        val position = windowState.position
+        if (position !is WindowPosition.Absolute) {
+            return
+        }
+        val placement = clampWindowPlacement(
+            WindowPlacement(
+                x = position.x.value,
+                y = position.y.value,
+                width = windowState.size.width.value,
+                height = windowState.size.height.value
+            )
+        )
+        try {
+            saveWindowPlacement(placement)
+        } catch (ex: Exception) {
+            println("Failed to save window placement: ${ex.message}")
+        }
+    }
+
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = {
+            persistWindowPlacement()
+            exitApplication()
+        },
         title = "DVRA Treasurer's Report Generator",
-        state = rememberWindowState(width = 800.dp, height = 1024.dp)
+        state = windowState
     ) {
+        @OptIn(FlowPreview::class)
+        LaunchedEffect(windowState) {
+            snapshotFlow {
+                val position = windowState.position
+                WindowPlacementSnapshot(
+                    minimized = windowState.isMinimized,
+                    absolute = position is WindowPosition.Absolute,
+                    x = (position as? WindowPosition.Absolute)?.x?.value,
+                    y = (position as? WindowPosition.Absolute)?.y?.value,
+                    width = windowState.size.width.value,
+                    height = windowState.size.height.value
+                )
+            }
+                .distinctUntilChanged()
+                .debounce(300)
+                .collect { snapshot ->
+                    if (snapshot.minimized || !snapshot.absolute) {
+                        return@collect
+                    }
+                    val x = snapshot.x ?: return@collect
+                    val y = snapshot.y ?: return@collect
+                    try {
+                        saveWindowPlacement(
+                            clampWindowPlacement(
+                                WindowPlacement(
+                                    x = x,
+                                    y = y,
+                                    width = snapshot.width,
+                                    height = snapshot.height
+                                )
+                            )
+                        )
+                    } catch (ex: Exception) {
+                        println("Failed to save window placement: ${ex.message}")
+                    }
+                }
+        }
+
         app()
     }
 }
+
+private data class WindowPlacementSnapshot(
+    val minimized: Boolean,
+    val absolute: Boolean,
+    val x: Float?,
+    val y: Float?,
+    val width: Float,
+    val height: Float
+)

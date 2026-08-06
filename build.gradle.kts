@@ -1,4 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.TimeZone
 
 plugins {
     kotlin("jvm")
@@ -11,7 +14,7 @@ kotlin {
 }
 
 group = "net.greybeardedgeek"
-version = "1.0.3"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -34,6 +37,45 @@ dependencies {
     // to display instructions written in markdown
     implementation("com.mikepenz:multiplatform-markdown-renderer-jvm:0.43.0")
     implementation("com.mikepenz:multiplatform-markdown-renderer-m2:0.43.0")
+
+    testImplementation(platform("org.junit:junit-bom:5.10.5"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+val generateBuildInfo by tasks.registering {
+    val outputFile = layout.buildDirectory.file("generated/buildInfo/build-info.properties")
+    outputs.file(outputFile)
+    // Always refresh so buildDate reflects the current build.
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val file = outputFile.get().asFile
+        file.parentFile.mkdirs()
+        val buildDate = SimpleDateFormat("yyyy-MM-dd").apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date())
+        file.writeText(
+            """
+            version=${project.version}
+            buildDate=$buildDate
+            """.trimIndent() + "\n"
+        )
+    }
+}
+
+sourceSets {
+    named("main") {
+        resources.srcDir(layout.buildDirectory.dir("generated/buildInfo"))
+    }
+}
+
+tasks.named<ProcessResources>("processResources") {
+    dependsOn(generateBuildInfo)
 }
 
 val resourceDirPath = rootDir.toPath().toString() + "/src/main/resources";
@@ -43,7 +85,7 @@ compose.desktop {
         mainClass = "MainKt"
         nativeDistributions {
             packageName = "DVRA-Treasurers-Report-Generator"
-            packageVersion = "1.0.2"
+            packageVersion = version.toString()
 
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
 
