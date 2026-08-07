@@ -31,6 +31,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-provider: basic
+          # Only write cache from Check so it does not race Release on push to main.
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
